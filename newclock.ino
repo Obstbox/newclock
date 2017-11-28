@@ -11,19 +11,19 @@
 
 
 // display com pins
-#define HOUR_TENS_LED_PIN      A0
-#define HOUR_UNITS_LED_PIN     A1
-#define MINUTE_TENS_LED_PIN    2
-#define MINUTE_UNITS_LED_PIN   3
+#define HOUR_TENS_LED_PIN      5  // A0
+#define HOUR_UNITS_LED_PIN     6  // A1
+#define MINUTE_TENS_LED_PIN    9  // 2
+#define MINUTE_UNITS_LED_PIN   10 // 3
 
 #define LED_A_PIN              8
 #define LED_B_PIN              11
-#define LED_C_PIN              10
-#define LED_D_PIN              9
-#define LED_E_PIN              6
+#define LED_C_PIN              3  // 10
+#define LED_D_PIN              2  // 9
+#define LED_E_PIN              A1 // 6
 #define LED_F_PIN              7
 #define LED_G_PIN              12
-#define ROUND_LED_PIN           5
+#define ROUND_LED_PIN          A0 // 5
 
 #define LDR_PIN                A2
 #define MAIN_BUTTON_PIN             4
@@ -116,7 +116,7 @@ Button mainButton;
 SystemTimer systemTimer;
   
 
-uint8_t const raw_data[DISPLAY_DIGITS_AMOUNT] = {6,7,8,9};
+uint8_t const raw_data[DISPLAY_DIGITS_AMOUNT] = {2,0,1,7};
 
 // --------------------------------------------------------------------------------------------------------------
 void setup () {
@@ -157,15 +157,16 @@ void setup () {
   systemTimer.counter = 0;
   systemTimer.tick = false;
 
-  MsTimer2::set(TIMER_INTERRUPT_UP, systemTick);
-  MsTimer2::start();
+  //~ MsTimer2::set(TIMER_INTERRUPT_UP, systemTick);
+  //~ MsTimer2::start();
 
   Serial.begin(9600);
 }
 
 // --------------------------------------------------------------------------------------------------------------
 void loop() {   
-  
+ 
+  /* 
   if ( systemTimer.tick == true) {
     systemTimer.tick = false;
     
@@ -178,6 +179,13 @@ void loop() {
     if (mainButton.state == LONG_PRESS) Serial.println("so looong");
     if (mainButton.state == SHORT_PRESS) Serial.println("shrt");
   }
+  */
+  setDigitalSegments(raw_data[0]);
+  int x = analogRead(LDR_PIN);
+  int y = 255 - x / 4;
+  if (y <= 10) y = 10;
+  analogWrite(MINUTE_UNITS_LED_PIN, y);
+  delay(50);  
 }
 
 
