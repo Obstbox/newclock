@@ -28,9 +28,7 @@
 #define LDR_PIN                A2
 #define MAIN_BUTTON_PIN             4
 
-// thr1 = 2 thr2 = 8 at 100us
-#define BUTTON_THRESHOLD1        15
-//~ #define BUTTON_THRESHOLD2        50
+#define BUTTON_THRESHOLD1        20
 #define BUTTON_THRESHOLD2        50
 
 #define DISPLAY_PERIOD_FULL_US              2000 // us
@@ -47,9 +45,15 @@
 #define ANALOG_WRITE_RESOLUTION   256
 
 enum ButtonState {
-    DEPRESSED = 0,
-    SHORT_PRESS,
-    LONG_PRESS
+  NO_PRESS = 0,
+  SHORT_PRESS,
+  LONG_PRESS
+};
+
+enum DeviceMode {
+  WATCH_MODE = 0,
+  SETTINGS_MODE,
+  RTC_ERROR_MODE
 };
 
 enum Symbol {
@@ -72,13 +76,6 @@ enum Symbol {
     SYMBOL_AMOUNT           // used for assert
 };
 
-//~ static uint8_t        display_data[DISPLAY_DIGITS_AMOUNT];
-static const uint8_t  display_digits_pins[DISPLAY_DIGITS_AMOUNT] = { HOUR_TENS_LED_PIN, 
-  HOUR_UNITS_LED_PIN, MINUTE_TENS_LED_PIN, MINUTE_UNITS_LED_PIN };
-
-static const uint8_t symbol_segments_pins[SYMBOL_SEGMENTS_AMOUNT] = { LED_A_PIN, LED_B_PIN, 
-  LED_C_PIN, LED_D_PIN, LED_E_PIN, LED_F_PIN, LED_G_PIN };
-
 static const uint8_t symbol_decode_table[SYMBOL_AMOUNT][SYMBOL_SEGMENTS_AMOUNT] = 
   {{ HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, LOW },       // SYMBOL_0 
   { HIGH, HIGH, LOW, LOW, LOW, LOW, LOW },            // SYMBOL_1
@@ -98,12 +95,6 @@ static const uint8_t symbol_decode_table[SYMBOL_AMOUNT][SYMBOL_SEGMENTS_AMOUNT] 
   { LOW, LOW, HIGH, HIGH, HIGH, LOW, HIGH },          // SYMBOL_t
   { LOW, LOW, HIGH, HIGH, LOW, LOW, HIGH },           // SYMBOL_c
   { LOW, LOW, HIGH, HIGH, HIGH, HIGH, HIGH }};        // SYMBOL_E
-  
-
-uint16_t leds_on_duration = LEDS_ON_DURATION_DEFAULT_US;
-uint16_t leds_off_duration = LEDS_OFF_DURATION_DEFAULT_US;
-
-uint16_t system_timer_counter = 0;
 
 typedef struct {
   uint8_t counter;
@@ -131,9 +122,9 @@ Button mainButton;
 SystemTimer systemTimer;
 Display display;
 
+uint8_t device_mode;
 
-
-uint8_t raw_data[DISPLAY_DIGITS_AMOUNT] = {2,6,6,6};
+uint8_t raw_data[DISPLAY_DIGITS_AMOUNT] = {0,1,2,3};
 
 // --------------------------------------------------------------------------------------------------------------
 void setup () {
@@ -171,12 +162,13 @@ void setup () {
   digitalWrite(LED_G_PIN, LOW);
   digitalWrite(ROUND_LED_PIN, LOW);
 
+  device_mode = WATCH_MODE;
   systemTimer.counter = 0;
   systemTimer.tick = false;
   display.pointer = 0;
   display.brightness = ANALOG_WRITE_RESOLUTION - 1;  
 
-  MsTimer2::set(T2_INTERRUPT_MS, systemTick);
+  MsTimer2::set(T2_INTERRUPT_MS, t2InterruptHandler);
   MsTimer2::start();
   
   Serial.begin(9600);
@@ -198,7 +190,10 @@ void loop() {
       readButton();
     }
     
-    if (systemTimer.counter % 20 == 0) {          
+    if (systemTimer.counter % 20 == 0) { 
+      
+      //~ switch(
+               
       if (mainButton.state == SHORT_PRESS) {
         raw_data[0] = 6;
       }      
@@ -230,7 +225,7 @@ void setDigitalSegments(uint8_t data) {
     return;
   }
   for (uint8_t i = 0; i < SYMBOL_SEGMENTS_AMOUNT; i++ ) {
-    digitalWrite(symbol_segments_pins[i], symbol_decode_table[data][i]);
+    digitalWrite(display.segments_pins[i], symbol_decode_table[data][i]);
   }
 }
 
@@ -254,12 +249,12 @@ void readButton() {
     }
     else {  // mainButton.counter < BUTTON_THRESHOLD1 < BUTTON_THRESHOLD2
       mainButton.counter = 0;
-      mainButton.state = DEPRESSED;
+      mainButton.state = NO_PRESS;
     }
   }
 }
 
-void systemTick() {
+void t2InterruptHandler() {
   systemTimer.tick = true;
   if (++systemTimer.counter == FINAL_TICK) {
     systemTimer.counter = 0;
