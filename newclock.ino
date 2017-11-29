@@ -106,6 +106,15 @@ typedef struct {
   boolean tick;
 } SystemTimer;
 
+typedef struct {
+  unsigned char hourTens;
+  unsigned char hourUnits;  
+  unsigned char minuteTens;
+  unsigned char minuteUnits;
+  unsigned char seconds;
+} CurrentTime;
+
+
 struct Display {
   uint8_t pointer;
   uint8_t brightness;
@@ -118,13 +127,16 @@ const uint8_t Display::digits_pins[DISPLAY_DIGITS_AMOUNT] =
 const uint8_t Display::segments_pins[SYMBOL_SEGMENTS_AMOUNT] =   
   { LED_A_PIN, LED_B_PIN, LED_C_PIN, LED_D_PIN, LED_E_PIN, LED_F_PIN, LED_G_PIN };
   
-Button mainButton;
-SystemTimer systemTimer;
+Button main_button;
+SystemTimer system_timer;
 Display display;
+CurrentTime current_time;
 
 uint8_t device_mode;
 
 uint8_t raw_data[DISPLAY_DIGITS_AMOUNT] = {0,1,2,3};
+
+tmElements_t time;
 
 // --------------------------------------------------------------------------------------------------------------
 void setup () {
@@ -163,10 +175,15 @@ void setup () {
   digitalWrite(ROUND_LED_PIN, LOW);
 
   device_mode = WATCH_MODE;
-  systemTimer.counter = 0;
-  systemTimer.tick = false;
+  system_timer.counter = 0;
+  system_timer.tick = false;
   display.pointer = 0;
   display.brightness = ANALOG_WRITE_RESOLUTION - 1;  
+  
+  current_time.hourTens = 0;
+  current_time.hourUnits = 0;
+  current_time.minuteTens = 0;
+  current_time.minuteUnits = 0;
 
   MsTimer2::set(T2_INTERRUPT_MS, t2InterruptHandler);
   MsTimer2::start();
@@ -179,29 +196,79 @@ void loop() {
   
   //~ delayMicroseconds(250);
    
-  if ( systemTimer.tick == true) {
-    systemTimer.tick = false;
+  if ( system_timer.tick == true) {
+    system_timer.tick = false;
     
-    // systemTimer.counter == 1
+    // system_timer.counter == 1
     displayNextDigit();
     
     
-    if (systemTimer.counter % 4 == 0) {        
+    
+    
+    if (system_timer.counter % 4 == 0) {        
       readButton();
     }
     
-    if (systemTimer.counter % 20 == 0) { 
+    
+    
+    
+    if (system_timer.counter % 100 == 0) {
+      if (RTC.read(time)) {
+        device_mode = WATCH_MODE;
+        uint8_t i = time.Hour;
+        uint8_t j = time.Minute;
+        raw_data[0] = i / 10;
+        raw_data[1] = i % 10;
+        raw_data[2] = j / 10;
+        raw_data[3] = j % 10;
+      } else {
+        if (RTC.chipPresent()) {
+          device_mode = SETTINGS_MODE;
+          raw_data[0] = 0;
+          raw_data[1] = 0;
+          raw_data[2] = 0;
+          raw_data[3] = 0;
+        } else {
+          device_mode = RTC_ERROR_MODE;
+          raw_data[0] = 6;
+          raw_data[1] = 6;
+          raw_data[2] = 6;
+          raw_data[3] = 6;
+        }
+      }
+    }
       
-      //~ switch(
+    
+    
+    
+    
+    if (system_timer.counter % 20 == 0) { 
+      
+      switch(device_mode) {
+        case WATCH_MODE:
+          if (main_button.state == LONG_PRESS) {
+            device_mode = SETTINGS_MODE;
+          }
+          break;
+        
+        case SETTINGS_MODE:
+          break;
+        
+        case RTC_ERROR_MODE:
+          break;
+          
+        default:
+          break;
+      }
                
-      if (mainButton.state == SHORT_PRESS) {
+      if (main_button.state == SHORT_PRESS) {
         raw_data[0] = 6;
       }      
-      if (mainButton.state == LONG_PRESS) {
+      if (main_button.state == LONG_PRESS) {
         raw_data[0] = 9;
       }    
-    }
-    
+    }    
+  
   }
 }
 
@@ -236,27 +303,27 @@ uint16_t readLightDrivenResistor() {
 
 void readButton() {
   if (digitalRead(MAIN_BUTTON_PIN) == LOW) {    // is pressed
-    if (mainButton.counter <= BUTTON_THRESHOLD2) mainButton.counter++;
+    if (main_button.counter <= BUTTON_THRESHOLD2) main_button.counter++;
   }
   else {    // is released
-    if ((mainButton.counter >= BUTTON_THRESHOLD1) && (mainButton.counter < BUTTON_THRESHOLD2)) {
-      mainButton.counter = 0;
-      mainButton.state = SHORT_PRESS;
+    if ((main_button.counter >= BUTTON_THRESHOLD1) && (main_button.counter < BUTTON_THRESHOLD2)) {
+      main_button.counter = 0;
+      main_button.state = SHORT_PRESS;
     }
-    else if (mainButton.counter >= BUTTON_THRESHOLD2) {
-      mainButton.counter = 0;
-      mainButton.state = LONG_PRESS;
+    else if (main_button.counter >= BUTTON_THRESHOLD2) {
+      main_button.counter = 0;
+      main_button.state = LONG_PRESS;
     }
-    else {  // mainButton.counter < BUTTON_THRESHOLD1 < BUTTON_THRESHOLD2
-      mainButton.counter = 0;
-      mainButton.state = NO_PRESS;
+    else {  // main_button.counter < BUTTON_THRESHOLD1 < BUTTON_THRESHOLD2
+      main_button.counter = 0;
+      main_button.state = NO_PRESS;
     }
   }
 }
 
 void t2InterruptHandler() {
-  systemTimer.tick = true;
-  if (++systemTimer.counter == FINAL_TICK) {
-    systemTimer.counter = 0;
+  system_timer.tick = true;
+  if (++system_timer.counter == FINAL_TICK) {
+    system_timer.counter = 0;
   }  
 }
