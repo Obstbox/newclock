@@ -138,6 +138,8 @@ uint8_t raw_data[DISPLAY_DIGITS_AMOUNT] = {0,1,2,3};
 
 tmElements_t time;
 
+unsigned long t[4] = {0,0,0,0};
+
 // --------------------------------------------------------------------------------------------------------------
 void setup () {
   pinMode(MAIN_BUTTON_PIN, INPUT);
@@ -214,7 +216,7 @@ void loop() {
     
     if (system_timer.counter % 100 == 0) {
       if (RTC.read(time)) {
-        device_mode = WATCH_MODE;
+        device_mode = WATCH_MODE;        
         uint8_t i = time.Hour;
         uint8_t j = time.Minute;
         raw_data[0] = i / 10;
@@ -242,7 +244,7 @@ void loop() {
     
     
     
-    if (system_timer.counter % 20 == 0) { 
+    if (system_timer.counter % 200 == 0) { 
       
       switch(device_mode) {
         case WATCH_MODE:
