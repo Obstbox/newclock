@@ -29,19 +29,22 @@
 #define MAIN_BUTTON_PIN             4
 
 // thr1 = 2 thr2 = 8 at 100us
-#define BUTTON_THRESHOLD1        5
+#define BUTTON_THRESHOLD1        15
 //~ #define BUTTON_THRESHOLD2        50
-#define BUTTON_THRESHOLD2        20
+#define BUTTON_THRESHOLD2        50
 
 #define DISPLAY_PERIOD_FULL_US              2000 // us
 #define LEDS_OFF_DURATION_DEFAULT_US     10
 #define LEDS_ON_DURATION_DEFAULT_US  (DISPLAY_PERIOD_FULL_US - LEDS_OFF_DURATION_DEFAULT_US)
 
-#define TIMER_INTERRUPT_UP      7
+#define T2_INTERRUPT_MS      4
 
 #define SYMBOL_SEGMENTS_AMOUNT    7
 #define DISPLAY_DIGITS_AMOUNT      4
 #define FINAL_TICK 4
+
+#define ANALOG_READ_RESOLUTION   1024
+#define ANALOG_WRITE_RESOLUTION   256
 
 enum ButtonState {
     DEPRESSED = 0,
@@ -112,11 +115,25 @@ typedef struct {
   boolean tick;
 } SystemTimer;
 
+struct Display {
+  uint8_t pointer;
+  uint8_t brightness;
+  static const uint8_t digits_pins[DISPLAY_DIGITS_AMOUNT];
+  static const uint8_t segments_pins[SYMBOL_SEGMENTS_AMOUNT];
+};
+
+const uint8_t Display::digits_pins[DISPLAY_DIGITS_AMOUNT] = 
+  {HOUR_TENS_LED_PIN, HOUR_UNITS_LED_PIN, MINUTE_TENS_LED_PIN, MINUTE_UNITS_LED_PIN};
+const uint8_t Display::segments_pins[SYMBOL_SEGMENTS_AMOUNT] =   
+  { LED_A_PIN, LED_B_PIN, LED_C_PIN, LED_D_PIN, LED_E_PIN, LED_F_PIN, LED_G_PIN };
+  
 Button mainButton;
 SystemTimer systemTimer;
-  
+Display display;
 
-uint8_t const raw_data[DISPLAY_DIGITS_AMOUNT] = {2,0,1,7};
+
+
+uint8_t raw_data[DISPLAY_DIGITS_AMOUNT] = {2,6,6,6};
 
 // --------------------------------------------------------------------------------------------------------------
 void setup () {
@@ -156,61 +173,57 @@ void setup () {
 
   systemTimer.counter = 0;
   systemTimer.tick = false;
+  display.pointer = 0;
+  display.brightness = ANALOG_WRITE_RESOLUTION - 1;  
 
-  //~ MsTimer2::set(TIMER_INTERRUPT_UP, systemTick);
-  //~ MsTimer2::start();
-
+  MsTimer2::set(T2_INTERRUPT_MS, systemTick);
+  MsTimer2::start();
+  
   Serial.begin(9600);
 }
 
 // --------------------------------------------------------------------------------------------------------------
 void loop() {   
- 
-  /* 
+  
+  //~ delayMicroseconds(250);
+   
   if ( systemTimer.tick == true) {
     systemTimer.tick = false;
     
-    displayShowDigit(display_digits_pins[systemTimer.counter], raw_data[systemTimer.counter]);  
+    // systemTimer.counter == 1
+    displayNextDigit();
     
-    if (systemTimer.counter % 3 == 1) {  
-      readButton();          
-    } 
-  
-    if (mainButton.state == LONG_PRESS) Serial.println("so looong");
-    if (mainButton.state == SHORT_PRESS) Serial.println("shrt");
+    
+    if (systemTimer.counter % 4 == 0) {        
+      readButton();
+    }
+    
+    if (systemTimer.counter % 20 == 0) {          
+      if (mainButton.state == SHORT_PRESS) {
+        raw_data[0] = 6;
+      }      
+      if (mainButton.state == LONG_PRESS) {
+        raw_data[0] = 9;
+      }    
+    }
+    
   }
-  */
-  setDigitalSegments(raw_data[0]);
-  int x = analogRead(LDR_PIN);
-  int y = 255 - x / 4;
-  if (y <= 10) y = 10;
-  analogWrite(MINUTE_UNITS_LED_PIN, y);
-  delay(50);  
 }
 
 
 // --------------------------------------------------------------------------------------------------------------
-void displayShowDigit(uint8_t index, uint8_t current_symbol) {
-    
-    leds_off_duration = map(readLightDrivenResistor(), 0, 1023, 0, DISPLAY_PERIOD_FULL_US);
-    leds_on_duration = DISPLAY_PERIOD_FULL_US - leds_off_duration;
-
-    setDigitalSegments(current_symbol);
-
-    displayDigitOn(index);
-    delayMicroseconds(leds_on_duration);
-    
-    displayDigitOff(index);
-    delayMicroseconds(leds_off_duration);
+void displayNextDigit() {
+  displayDigitOff(display.digits_pins[display.pointer]);
+  if ( ++display.pointer >= DISPLAY_DIGITS_AMOUNT ) {
+    display.pointer = 0;
+  }
+  setDigitalSegments(raw_data[display.pointer]);
+  analogWrite(display.digits_pins[display.pointer], display.brightness);  
 }
 
 void displayDigitOff(uint8_t pin) {
   digitalWrite(pin, LOW);  
-  }
-
-void displayDigitOn(uint8_t pin) {
-  digitalWrite(pin, HIGH);
-  }
+}
 
 void setDigitalSegments(uint8_t data) {
   if (data > SYMBOL_AMOUNT) {
@@ -251,5 +264,4 @@ void systemTick() {
   if (++systemTimer.counter == FINAL_TICK) {
     systemTimer.counter = 0;
   }  
-  //~ displayShowDigit(display_digits_pins[systemTimer.counter], raw_data[systemTimer.counter]);
 }
