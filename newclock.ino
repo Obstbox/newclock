@@ -28,8 +28,8 @@
 #define LDR_PIN                A2
 #define MAIN_BUTTON_PIN             4
 
-#define BUTTON_THRESHOLD1        20
-#define BUTTON_THRESHOLD2        50
+#define BUTTON_THRESHOLD1        80  // 20
+#define BUTTON_THRESHOLD2        200 // 50
 
 #define DISPLAY_PERIOD_FULL_US              2000 // us
 #define LEDS_OFF_DURATION_DEFAULT_US     10
@@ -43,6 +43,8 @@
 
 #define ANALOG_READ_RESOLUTION   1024
 #define ANALOG_WRITE_RESOLUTION   256
+
+#define T2CounterContains(quantum)  ( (system_timer.counter % (quantum)) == 0)
 
 enum ButtonState {
   NO_PRESS = 0,
@@ -76,6 +78,14 @@ enum Symbol {
     SYMBOL_AMOUNT           // used for assert
 };
 
+enum TimeCells {
+  HOUR_TENS = 0,
+  HOUR_UNITS,
+  MINUTE_TENS,
+  MINUTE_UNITS,
+  TIME_CELLS_AMOUNT
+};
+  
 static const uint8_t symbol_decode_table[SYMBOL_AMOUNT][SYMBOL_SEGMENTS_AMOUNT] = 
   {{ HIGH, HIGH, HIGH, HIGH, HIGH, HIGH, LOW },       // SYMBOL_0 
   { HIGH, HIGH, LOW, LOW, LOW, LOW, LOW },            // SYMBOL_1
@@ -106,13 +116,13 @@ typedef struct {
   boolean tick;
 } SystemTimer;
 
-typedef struct {
-  unsigned char hourTens;
-  unsigned char hourUnits;  
-  unsigned char minuteTens;
-  unsigned char minuteUnits;
-  unsigned char seconds;
-} CurrentTime;
+//~ typedef struct {
+  //~ unsigned char hourTens;
+  //~ unsigned char hourUnits;  
+  //~ unsigned char minuteTens;
+  //~ unsigned char minuteUnits;
+  //~ unsigned char seconds;
+//~ } CurrentTime;
 
 
 struct Display {
@@ -130,15 +140,14 @@ const uint8_t Display::segments_pins[SYMBOL_SEGMENTS_AMOUNT] =
 Button main_button;
 SystemTimer system_timer;
 Display display;
-CurrentTime current_time;
+
+uint8_t current_time[TIME_CELLS_AMOUNT] = {0,0,0,0};
 
 uint8_t device_mode;
 
 uint8_t raw_data[DISPLAY_DIGITS_AMOUNT] = {0,1,2,3};
 
 tmElements_t time;
-
-unsigned long t[4] = {0,0,0,0};
 
 // --------------------------------------------------------------------------------------------------------------
 void setup () {
@@ -182,10 +191,10 @@ void setup () {
   display.pointer = 0;
   display.brightness = ANALOG_WRITE_RESOLUTION - 1;  
   
-  current_time.hourTens = 0;
-  current_time.hourUnits = 0;
-  current_time.minuteTens = 0;
-  current_time.minuteUnits = 0;
+  //~ current_time.hourTens = 0;
+  //~ current_time.hourUnits = 0;
+  //~ current_time.minuteTens = 0;
+  //~ current_time.minuteUnits = 0;
 
   MsTimer2::set(T2_INTERRUPT_MS, t2InterruptHandler);
   MsTimer2::start();
@@ -194,84 +203,136 @@ void setup () {
 }
 
 // --------------------------------------------------------------------------------------------------------------
-void loop() {   
+void loop() {    
   
-  //~ delayMicroseconds(250);
-   
+  /*
   if ( system_timer.tick == true) {
     system_timer.tick = false;
-    
-    // system_timer.counter == 1
-    displayNextDigit();
-    
-    
-    
-    
-    if (system_timer.counter % 4 == 0) {        
-      readButton();
-    }
-    
-    
-    
-    
+
     if (system_timer.counter % 100 == 0) {
       if (RTC.read(time)) {
-        device_mode = WATCH_MODE;        
-        uint8_t i = time.Hour;
-        uint8_t j = time.Minute;
-        raw_data[0] = i / 10;
-        raw_data[1] = i % 10;
-        raw_data[2] = j / 10;
-        raw_data[3] = j % 10;
+        
+        raw_data[0] = time.Hour / 10;
+        raw_data[1] = time.Hour % 10;
+        raw_data[2] = time.Minute / 10;
+        raw_data[3] = time.Minute % 10;
+        //~ device_mode = WATCH_MODE;
+        
       } else {
         if (RTC.chipPresent()) {
-          device_mode = SETTINGS_MODE;
           raw_data[0] = 0;
           raw_data[1] = 0;
           raw_data[2] = 0;
           raw_data[3] = 0;
+          device_mode = SETTINGS_MODE;
         } else {
-          device_mode = RTC_ERROR_MODE;
           raw_data[0] = 6;
           raw_data[1] = 6;
           raw_data[2] = 6;
           raw_data[3] = 6;
+          device_mode = RTC_ERROR_MODE;
         }
       }
-    }
-      
-    
-    
-    
-    
-    if (system_timer.counter % 200 == 0) { 
-      
-      switch(device_mode) {
-        case WATCH_MODE:
-          if (main_button.state == LONG_PRESS) {
-            device_mode = SETTINGS_MODE;
+    }  
+  } */
+
+  switch(device_mode) {
+    case WATCH_MODE:
+      if ( system_timer.tick == true) {
+        system_timer.tick = false;
+        
+        
+        
+        
+        // T2CounterContains(1)
+        readButton();
+        displayNextDigit();
+        
+        
+        
+        
+        /*if (system_timer.counter % 4 == 0) {
+          if (main_button.state == LONG_PRESS) { 
+            device_mode = SETTINGS_MODE;     
           }
-          break;
+        }*/
         
-        case SETTINGS_MODE:
-          break;
         
-        case RTC_ERROR_MODE:
-          break;
+        
+                
+        if (T2CounterContains(4)) {          
           
-        default:
-          break;
+          if (RTC.read(time)) { 
+            current_time[HOUR_TENS] = time.Hour / 10;
+            current_time[HOUR_UNITS] = time.Hour % 10;
+            current_time[MINUTE_TENS] = time.Minute / 10;
+            current_time[MINUTE_UNITS] = time.Minute % 10;
+            
+            if (main_button.state == LONG_PRESS) { 
+              device_mode = SETTINGS_MODE;
+              digitalWrite(display.digits_pins[2], HIGH);
+            }
+          } 
+          else {
+            if (RTC.chipPresent()) {  // RTC is online but not set
+              current_time[HOUR_TENS] = 0;
+              current_time[HOUR_UNITS] = 0;
+              current_time[MINUTE_TENS] = 0;
+              current_time[MINUTE_UNITS] = 0;
+
+              if (main_button.state == LONG_PRESS) { 
+                device_mode = SETTINGS_MODE;     
+              }
+            } 
+            else {  // RTC is offline
+              // TO DO: "rtcE" in RTC_ERROR_MODE
+              current_time[HOUR_TENS] = 6;
+              current_time[HOUR_UNITS] = 6;
+              current_time[MINUTE_TENS] = 6;
+              current_time[MINUTE_UNITS] = 6;
+              device_mode = RTC_ERROR_MODE;
+            }
+          }
+        }        
       }
-               
-      if (main_button.state == SHORT_PRESS) {
-        raw_data[0] = 6;
-      }      
-      if (main_button.state == LONG_PRESS) {
-        raw_data[0] = 9;
-      }    
-    }    
-  
+      break;
+    
+    case SETTINGS_MODE:
+      if ( system_timer.tick == true) {
+        system_timer.tick = false;
+        setDigitalSegments(2);
+        
+        
+        
+        
+        // T2CounterContains(1)
+        readButton();
+        
+        
+        
+        
+        if (T2CounterContains(100)) {
+          display.digits_pins[2] != display.digits_pins[2];
+        }
+        
+        
+        
+        
+        if (T2CounterContains(4)) {
+          if (main_button.state == LONG_PRESS) {
+            device_mode = WATCH_MODE;
+          }
+        }
+      }
+      break;
+    
+    case RTC_ERROR_MODE:
+      break;
+      
+    default:
+      break;
   }
+  
 }
 
 
@@ -281,7 +342,7 @@ void displayNextDigit() {
   if ( ++display.pointer >= DISPLAY_DIGITS_AMOUNT ) {
     display.pointer = 0;
   }
-  setDigitalSegments(raw_data[display.pointer]);
+  setDigitalSegments(current_time[display.pointer]);
   analogWrite(display.digits_pins[display.pointer], display.brightness);  
 }
 
@@ -328,4 +389,5 @@ void t2InterruptHandler() {
   if (++system_timer.counter == FINAL_TICK) {
     system_timer.counter = 0;
   }  
+  //~ readButton();
 }
