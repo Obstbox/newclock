@@ -128,6 +128,7 @@ typedef struct {
 struct Display {
   uint8_t pointer;
   uint8_t brightness;
+  uint8_t dimmed;
   static const uint8_t digits_pins[DISPLAY_DIGITS_AMOUNT];
   static const uint8_t segments_pins[SYMBOL_SEGMENTS_AMOUNT];
 };
@@ -186,9 +187,11 @@ void setup () {
   digitalWrite(ROUND_LED_PIN, LOW);
 
   device_mode = WATCH_MODE;
+  device_mode = SETTINGS_MODE;
   system_timer.counter = 0;
   system_timer.tick = false;
   display.pointer = 0;
+  display.dimmed = 1;
   display.brightness = ANALOG_WRITE_RESOLUTION - 1;  
   
   //~ current_time.hourTens = 0;
@@ -204,37 +207,6 @@ void setup () {
 
 // --------------------------------------------------------------------------------------------------------------
 void loop() {    
-  
-  /*
-  if ( system_timer.tick == true) {
-    system_timer.tick = false;
-
-    if (system_timer.counter % 100 == 0) {
-      if (RTC.read(time)) {
-        
-        raw_data[0] = time.Hour / 10;
-        raw_data[1] = time.Hour % 10;
-        raw_data[2] = time.Minute / 10;
-        raw_data[3] = time.Minute % 10;
-        //~ device_mode = WATCH_MODE;
-        
-      } else {
-        if (RTC.chipPresent()) {
-          raw_data[0] = 0;
-          raw_data[1] = 0;
-          raw_data[2] = 0;
-          raw_data[3] = 0;
-          device_mode = SETTINGS_MODE;
-        } else {
-          raw_data[0] = 6;
-          raw_data[1] = 6;
-          raw_data[2] = 6;
-          raw_data[3] = 6;
-          device_mode = RTC_ERROR_MODE;
-        }
-      }
-    }  
-  } */
 
   switch(device_mode) {
     case WATCH_MODE:
@@ -247,19 +219,10 @@ void loop() {
         // T2CounterContains(1)
         readButton();
         displayNextDigit();
+      
         
         
-        
-        
-        /*if (system_timer.counter % 4 == 0) {
-          if (main_button.state == LONG_PRESS) { 
-            device_mode = SETTINGS_MODE;     
-          }
-        }*/
-        
-        
-        
-                
+      
         if (T2CounterContains(4)) {          
           
           if (RTC.read(time)) { 
@@ -269,8 +232,7 @@ void loop() {
             current_time[MINUTE_UNITS] = time.Minute % 10;
             
             if (main_button.state == LONG_PRESS) { 
-              device_mode = SETTINGS_MODE;
-              digitalWrite(display.digits_pins[2], HIGH);
+              device_mode = SETTINGS_MODE;              
             }
           } 
           else {
@@ -281,6 +243,7 @@ void loop() {
               current_time[MINUTE_UNITS] = 0;
 
               if (main_button.state == LONG_PRESS) { 
+                display.pointer = 0;
                 device_mode = SETTINGS_MODE;     
               }
             } 
@@ -299,21 +262,10 @@ void loop() {
     
     case SETTINGS_MODE:
       if ( system_timer.tick == true) {
-        system_timer.tick = false;
-        setDigitalSegments(2);
-        
-        
-        
+        system_timer.tick = false; 
         
         // T2CounterContains(1)
         readButton();
-        
-        
-        
-        
-        if (T2CounterContains(100)) {
-          display.digits_pins[2] != display.digits_pins[2];
-        }
         
         
         
@@ -322,6 +274,27 @@ void loop() {
           if (main_button.state == LONG_PRESS) {
             device_mode = WATCH_MODE;
           }
+        }
+        
+        
+        
+        
+        if (T2CounterContains(10010)) {
+          
+          // display.dimmed = !display.dimmed;
+          // Serial.println(display.dimmed);
+          
+          if (display.dimmed == 0) {
+            display.dimmed = 1;
+            analogWrite(display.digits_pins[display.pointer], 255);
+            Serial.println(display.dimmed);
+          } else {
+            display.dimmed = 0;
+            analogWrite(display.digits_pins[display.pointer], 15);
+            Serial.println(display.dimmed);
+          }
+          setDigitalSegments(1);
+
         }
       }
       break;
