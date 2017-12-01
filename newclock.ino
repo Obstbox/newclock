@@ -2,7 +2,7 @@
  * 
  * 
  * *******************************************************************/
-#define SERIAL_DEBUG 
+//#define SERIAL_DEBUG 
 
 #include <Wire.h>
 #include <TimeLib.h>
@@ -29,7 +29,7 @@
 #define MAIN_BUTTON_PIN             4
 
 #define BUTTON_THRESHOLD1        80  // 20
-#define BUTTON_THRESHOLD2        200 // 50
+#define BUTTON_THRESHOLD2        150 // 50
 
 #define DISPLAY_PERIOD_FULL_US              2000 // us
 #define LEDS_OFF_DURATION_DEFAULT_US     10
@@ -39,7 +39,7 @@
 
 #define SYMBOL_SEGMENTS_AMOUNT    7
 #define DISPLAY_DIGITS_AMOUNT      4
-#define FINAL_TICK 4
+#define FINAL_TICK 40000
 
 #define ANALOG_READ_RESOLUTION   1024
 #define ANALOG_WRITE_RESOLUTION   256
@@ -92,8 +92,6 @@ static const uint8_t symbol_decode_table[SYMBOL_AMOUNT][SYMBOL_SEGMENTS_AMOUNT] 
   { HIGH, LOW, HIGH, HIGH, LOW, HIGH, HIGH },         // SYMBOL_2
   { HIGH, HIGH, HIGH, LOW, LOW, HIGH, HIGH },         // SYMBOL_3
   { HIGH, HIGH, LOW, LOW, HIGH, LOW, HIGH },          // SYMBOL_4
-  
-  
   { LOW, HIGH, HIGH, LOW, HIGH, HIGH, HIGH },         // SYMBOL_5
   { LOW, HIGH, HIGH, HIGH, HIGH, HIGH, HIGH },        // SYMBOL_6
   { HIGH, HIGH, LOW, LOW, LOW, HIGH, LOW },           // SYMBOL_7
@@ -109,6 +107,7 @@ static const uint8_t symbol_decode_table[SYMBOL_AMOUNT][SYMBOL_SEGMENTS_AMOUNT] 
 typedef struct {
   uint8_t counter;
   ButtonState state;
+  boolean used;
 } Button;
 
 typedef struct {
@@ -116,19 +115,10 @@ typedef struct {
   boolean tick;
 } SystemTimer;
 
-//~ typedef struct {
-  //~ unsigned char hourTens;
-  //~ unsigned char hourUnits;  
-  //~ unsigned char minuteTens;
-  //~ unsigned char minuteUnits;
-  //~ unsigned char seconds;
-//~ } CurrentTime;
-
-
 struct Display {
   uint8_t pointer;
   uint8_t brightness;
-  uint8_t dimmed;
+  boolean dimmed;
   static const uint8_t digits_pins[DISPLAY_DIGITS_AMOUNT];
   static const uint8_t segments_pins[SYMBOL_SEGMENTS_AMOUNT];
 };
@@ -191,14 +181,12 @@ void setup () {
   system_timer.counter = 0;
   system_timer.tick = false;
   display.pointer = 0;
-  display.dimmed = 1;
+  display.dimmed = false;
   display.brightness = ANALOG_WRITE_RESOLUTION - 1;  
+  main_button.used = false;
+  main_button.state = NO_PRESS;
+  main_button.counter = 0;
   
-  //~ current_time.hourTens = 0;
-  //~ current_time.hourUnits = 0;
-  //~ current_time.minuteTens = 0;
-  //~ current_time.minuteUnits = 0;
-
   MsTimer2::set(T2_INTERRUPT_MS, t2InterruptHandler);
   MsTimer2::start();
   
@@ -217,7 +205,7 @@ void loop() {
         
         
         // T2CounterContains(1)
-        readButton();
+        checkButton();
         displayNextDigit();
       
         
@@ -231,7 +219,8 @@ void loop() {
             current_time[MINUTE_TENS] = time.Minute / 10;
             current_time[MINUTE_UNITS] = time.Minute % 10;
             
-            if (main_button.state == LONG_PRESS) { 
+            if (isButtonStatus(LONG_PRESS)) {
+              display.pointer = 0;
               device_mode = SETTINGS_MODE;              
             }
           } 
@@ -242,7 +231,7 @@ void loop() {
               current_time[MINUTE_TENS] = 0;
               current_time[MINUTE_UNITS] = 0;
 
-              if (main_button.state == LONG_PRESS) { 
+              if (isButtonStatus(LONG_PRESS)) { 
                 display.pointer = 0;
                 device_mode = SETTINGS_MODE;     
               }
@@ -265,35 +254,70 @@ void loop() {
         system_timer.tick = false; 
         
         // T2CounterContains(1)
-        readButton();
+        checkButton();
         
         
         
         
         if (T2CounterContains(4)) {
-          if (main_button.state == LONG_PRESS) {
-            device_mode = WATCH_MODE;
+          if (isButtonStatus(LONG_PRESS)) {
+            digitOff(display.digits_pins[display.pointer]);
+            if (++display.pointer >= DISPLAY_DIGITS_AMOUNT) {
+              display.pointer = 0;
+              device_mode = WATCH_MODE;
+            }
           }
+          if (isButtonStatus(SHORT_PRESS)) {
+            switch (display.pointer) {
+              case HOUR_TENS:
+                if (current_time[display.pointer]++ == 2) {
+                  current_time[display.pointer] = 0;
+                }
+                break;
+              
+              case HOUR_UNITS:
+                if (current_time[HOUR_TENS] != 2) {
+                  if (current_time[display.pointer]++ >= 9) {
+                    current_time[display.pointer] = 0;
+                  }
+                } else {
+                  if (current_time[display.pointer]++ >= 3) {
+                    current_time[display.pointer] = 0;
+                  }
+                }
+                break;
+              
+              case MINUTE_TENS:
+                if (current_time[display.pointer]++ >= 5) {
+                  current_time[display.pointer] = 0;
+                }
+                break;
+              
+              case MINUTE_UNITS:
+                if (current_time[display.pointer]++ >= 9) {
+                  current_time[display.pointer] = 0;
+                }
+                break;
+            }
+          }
+          //Serial.println(display.pointer);
         }
         
         
         
         
-        if (T2CounterContains(10010)) {
+        if (T2CounterContains(143)) {
           
-          // display.dimmed = !display.dimmed;
+          display.dimmed = !display.dimmed;
           // Serial.println(display.dimmed);
+                    
+          setDigitalSegments(current_time[display.pointer]);
           
-          if (display.dimmed == 0) {
-            display.dimmed = 1;
-            analogWrite(display.digits_pins[display.pointer], 255);
-            Serial.println(display.dimmed);
+          if (display.dimmed) {
+            analogWrite(display.digits_pins[display.pointer], 25);
           } else {
-            display.dimmed = 0;
-            analogWrite(display.digits_pins[display.pointer], 15);
-            Serial.println(display.dimmed);
+            analogWrite(display.digits_pins[display.pointer], 255);
           }
-          setDigitalSegments(1);
 
         }
       }
@@ -311,7 +335,7 @@ void loop() {
 
 // --------------------------------------------------------------------------------------------------------------
 void displayNextDigit() {
-  displayDigitOff(display.digits_pins[display.pointer]);
+  digitOff(display.digits_pins[display.pointer]);
   if ( ++display.pointer >= DISPLAY_DIGITS_AMOUNT ) {
     display.pointer = 0;
   }
@@ -319,7 +343,7 @@ void displayNextDigit() {
   analogWrite(display.digits_pins[display.pointer], display.brightness);  
 }
 
-void displayDigitOff(uint8_t pin) {
+void digitOff(uint8_t pin) {
   digitalWrite(pin, LOW);  
 }
 
@@ -337,23 +361,37 @@ uint16_t readLightDrivenResistor() {
   return value;
 }
 
-void readButton() {
+void checkButton() {
   if (digitalRead(MAIN_BUTTON_PIN) == LOW) {    // is pressed
     if (main_button.counter <= BUTTON_THRESHOLD2) main_button.counter++;
   }
   else {    // is released
     if ((main_button.counter >= BUTTON_THRESHOLD1) && (main_button.counter < BUTTON_THRESHOLD2)) {
-      main_button.counter = 0;
+      if (main_button.used == true) {
+        main_button.counter = 0;
+      }
       main_button.state = SHORT_PRESS;
     }
     else if (main_button.counter >= BUTTON_THRESHOLD2) {
-      main_button.counter = 0;
+      if (main_button.used == true) {
+        main_button.counter = 0;
+      }
       main_button.state = LONG_PRESS;
     }
     else {  // main_button.counter < BUTTON_THRESHOLD1 < BUTTON_THRESHOLD2
       main_button.counter = 0;
       main_button.state = NO_PRESS;
+      main_button.used = false;
     }
+  }
+}
+
+boolean isButtonStatus(uint8_t state) {
+  if (main_button.state == state) {
+    main_button.used = true;
+    return true;
+  } else {
+    return false;
   }
 }
 
@@ -362,5 +400,5 @@ void t2InterruptHandler() {
   if (++system_timer.counter == FINAL_TICK) {
     system_timer.counter = 0;
   }  
-  //~ readButton();
+  //~ checkButton();
 }
