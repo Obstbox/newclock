@@ -10,7 +10,7 @@
 #include <MsTimer2.h>
 
 
-// display com pins
+// display stuff
 #define HOUR_TENS_LED_PIN      5  // A0
 #define HOUR_UNITS_LED_PIN     6  // A1
 #define MINUTE_TENS_LED_PIN    9  // 2
@@ -25,27 +25,30 @@
 #define LED_G_PIN              12
 #define ROUND_LED_PIN          A0 // 5
 
+#define SYMBOL_SEGMENTS_AMOUNT    7
+#define DISPLAY_DIGITS_AMOUNT      4
+#define FINAL_TICK             40000
+
+// other pins
 #define LDR_PIN                A2
 #define MAIN_BUTTON_PIN             4
 
-#define BUTTON_THRESHOLD1        80  // 20
-#define BUTTON_THRESHOLD2        150 // 50
-
-#define DISPLAY_PERIOD_FULL_US              2000 // us
-#define LEDS_OFF_DURATION_DEFAULT_US     10
-#define LEDS_ON_DURATION_DEFAULT_US  (DISPLAY_PERIOD_FULL_US - LEDS_OFF_DURATION_DEFAULT_US)
-
+// thresholds & delays
+#define MINIMAL_BRIGHTNESS     8
+#define DIMMED_BRIGHTNESS      (MINIMAL_BRIGHTNESS / 3)
+#define BUTTON_THRESHOLD1        40  // 20
+#define BUTTON_THRESHOLD2        200 // 50
 #define T2_INTERRUPT_MS      4
+#define BRIGHTNESS_QUANTUM    88
 
-#define SYMBOL_SEGMENTS_AMOUNT    7
-#define DISPLAY_DIGITS_AMOUNT      4
-#define FINAL_TICK 40000
-
+// other constants
 #define ANALOG_READ_RESOLUTION   1024
 #define ANALOG_WRITE_RESOLUTION   256
 
+// macros
 #define T2CounterContains(quantum)  ( (system_timer.counter % (quantum)) == 0)
 
+// structs
 enum ButtonState {
   NO_PRESS = 0,
   SHORT_PRESS,
@@ -83,7 +86,7 @@ enum TimeCells {
   HOUR_UNITS,
   MINUTE_TENS,
   MINUTE_UNITS,
-  TIME_CELLS_AMOUNT
+  //TIME_CELLS_AMOUNT
 };
   
 static const uint8_t symbol_decode_table[SYMBOL_AMOUNT][SYMBOL_SEGMENTS_AMOUNT] = 
@@ -101,7 +104,7 @@ static const uint8_t symbol_decode_table[SYMBOL_AMOUNT][SYMBOL_SEGMENTS_AMOUNT] 
   { LOW, LOW, LOW, LOW, LOW, LOW, HIGH},              // SYMBOL_MINUS
   { LOW, LOW, LOW, HIGH, LOW, LOW, HIGH },            // SYMBOL_r
   { LOW, LOW, HIGH, HIGH, HIGH, LOW, HIGH },          // SYMBOL_t
-  { LOW, LOW, HIGH, HIGH, LOW, LOW, HIGH },           // SYMBOL_c
+  { LOW, LOW, HIGH, HIGH, LOW, LOW, HIGH },           // SYMBOL_j
   { LOW, LOW, HIGH, HIGH, HIGH, HIGH, HIGH }};        // SYMBOL_E
 
 typedef struct {
@@ -132,11 +135,8 @@ Button main_button;
 SystemTimer system_timer;
 Display display;
 
-uint8_t current_time[TIME_CELLS_AMOUNT] = {0,0,0,0};
-
+uint8_t current_time[DISPLAY_DIGITS_AMOUNT]; 
 uint8_t device_mode;
-
-uint8_t raw_data[DISPLAY_DIGITS_AMOUNT] = {0,1,2,3};
 
 tmElements_t time;
 
@@ -177,12 +177,11 @@ void setup () {
   digitalWrite(ROUND_LED_PIN, LOW);
 
   device_mode = WATCH_MODE;
-  device_mode = SETTINGS_MODE;
+  //device_mode = SETTINGS_MODE;
   system_timer.counter = 0;
   system_timer.tick = false;
   display.pointer = 0;
   display.dimmed = false;
-  display.brightness = ANALOG_WRITE_RESOLUTION - 1;  
   main_button.used = false;
   main_button.state = NO_PRESS;
   main_button.counter = 0;
@@ -201,16 +200,12 @@ void loop() {
       if ( system_timer.tick == true) {
         system_timer.tick = false;
         
-        
-        
-        
+        // --- quantum ----------------------------------------
         // T2CounterContains(1)
         checkButton();
         displayNextDigit();
       
-        
-        
-      
+        // --- quantum ----------------------------------------
         if (T2CounterContains(4)) {          
           
           if (RTC.read(time)) { 
@@ -246,6 +241,11 @@ void loop() {
             }
           }
         }        
+        
+        // --- quantum ----------------------------------------
+        if (T2CounterContains(BRIGHTNESS_QUANTUM)) {
+          display.brightness = calcBrightnessFronLDR();
+        }
       }
       break;
     
@@ -253,13 +253,15 @@ void loop() {
       if ( system_timer.tick == true) {
         system_timer.tick = false; 
         
+        // --- quantum ----------------------------------------
         // T2CounterContains(1)
         checkButton();
         
-        
-        
-        
+        // --- quantum ----------------------------------------
         if (T2CounterContains(4)) {
+
+          setDigitalSegments(current_time[display.pointer]);
+
           if (isButtonStatus(LONG_PRESS)) {
             digitOff(display.digits_pins[display.pointer]);
             if (++display.pointer >= DISPLAY_DIGITS_AMOUNT) {
@@ -300,23 +302,22 @@ void loop() {
                 break;
             }
           }
-          //Serial.println(display.pointer);
         }
         
-        
-        
-        
+        // --- quantum ----------------------------------------
+        if (T2CounterContains(BRIGHTNESS_QUANTUM)) {
+          display.brightness = calcBrightnessFronLDR();
+        }
+
+        // --- quantum ----------------------------------------
         if (T2CounterContains(143)) {
           
           display.dimmed = !display.dimmed;
-          // Serial.println(display.dimmed);
-                    
-          setDigitalSegments(current_time[display.pointer]);
           
           if (display.dimmed) {
-            analogWrite(display.digits_pins[display.pointer], 25);
+            analogWrite(display.digits_pins[display.pointer], DIMMED_BRIGHTNESS);
           } else {
-            analogWrite(display.digits_pins[display.pointer], 255);
+            analogWrite(display.digits_pins[display.pointer], display.brightness);
           }
 
         }
@@ -356,8 +357,11 @@ void setDigitalSegments(uint8_t data) {
   }
 }
 
-uint16_t readLightDrivenResistor() {
-  uint16_t value = analogRead(LDR_PIN);
+uint8_t calcBrightnessFronLDR() {
+  uint8_t value = (uint8_t) (ANALOG_WRITE_RESOLUTION - analogRead(LDR_PIN) / 4);
+  if (value < MINIMAL_BRIGHTNESS) {
+    value = MINIMAL_BRIGHTNESS;
+  }
   return value;
 }
 
@@ -400,5 +404,4 @@ void t2InterruptHandler() {
   if (++system_timer.counter == FINAL_TICK) {
     system_timer.counter = 0;
   }  
-  //~ checkButton();
 }
